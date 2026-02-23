@@ -1,0 +1,188 @@
+{
+  "name": "Review Ingestion & Enrichment (CSV)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "filePath": "/home/node/.n8n-files/data/reviews_sample.csv",
+        "options": {
+          "headerRow": true
+        }
+      },
+      "id": "read-csv",
+      "name": "Read CSV File",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "jsonToBinary",
+        "options": {
+          "dataProperty": "data"
+        }
+      },
+      "id": "convert-to-json",
+      "name": "Spreadsheet File",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize review fields and generate review_id\nconst items = $input.all();\nconst normalized = [];\n\nfor (const item of items) {\n  const json = item.json;\n  \n  // Generate unique review_id if not present\n  const reviewId = json.review_id || `csv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\n  \n  normalized.push({\n    json: {\n      source: 'csv',\n      product_id: json.product_id || null,\n      product_name: (json.product_name || 'Unknown').trim(),\n      review_id: reviewId,\n      reviewer_name: json.reviewer_name || null,\n      rating: parseFloat(json.rating) || 3,\n      review_title: (json.review_title || '').trim(),\n      review_text: (json.review_text || '').trim(),\n      review_date: json.review_date || new Date().toISOString().split('T')[0],\n      country: json.country || 'Unknown',\n      language: json.language || 'en'\n    }\n  });\n}\n\nreturn normalized;"
+      },
+      "id": "normalize-fields",
+      "name": "Normalize Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rule-Based NLP Enrichment Engine\n// Copy from lib/nlp-engine.js\n\nconst TOPIC_KEYWORDS = {\n  battery: ['battery', 'charge', 'charging', 'power', 'drain', 'dies', 'life'],\n  performance: ['slow', 'fast', 'lag', 'speed', 'performance', 'quick', 'responsive', 'sluggish'],\n  durability: ['broke', 'broken', 'sturdy', 'fragile', 'durable', 'quality', 'build', 'cheap', 'flimsy'],\n  pricing: ['expensive', 'cheap', 'price', 'value', 'worth', 'cost', 'overpriced', 'affordable'],\n  delivery: ['shipping', 'arrived', 'delayed', 'delivery', 'shipment', 'package', 'late', 'damaged box'],\n  sound: ['audio', 'noise', 'volume', 'sound', 'bass', 'treble', 'speaker', 'quiet', 'loud'],\n  support: ['customer service', 'support', 'help', 'response', 'contacted', 'reply', 'warranty'],\n  setup: ['install', 'installation', 'configure', 'setup', 'easy', 'complicated', 'manual', 'instructions'],\n  screen: ['display', 'screen', 'brightness', 'resolution', 'pixels', 'colors', 'touch'],\n  compatibility: ['compatible', 'compatibility', 'works with', 'connect', 'sync', 'pair', 'pairing'],\n  design: ['design', 'looks', 'aesthetic', 'style', 'appearance', 'color', 'size', 'weight'],\n  ui: ['interface', 'ui', 'menu', 'navigation', 'controls', 'buttons', 'app']\n};\n\nconst URGENCY_KEYWORDS = {\n  high: ['fire', 'smoke', 'overheat', 'overheating', 'hazard', 'exploded', 'explosion', 'dangerous', 'safety', 'burn', 'burning', 'hot', 'melt', 'melted', 'injury', 'hurt'],\n  medium: ['broken', 'broke', 'stopped working', 'dead', 'refund', 'return', 'defective', 'not working', \"doesn't work\", 'failed', 'unusable', 'malfunction']\n};\n\nconst SENTIMENT_MODIFIERS = {\n  positive: ['amazing', 'excellent', 'perfect', 'love', 'great', 'awesome', 'fantastic', 'wonderful', 'best', 'impressed', 'highly recommend', 'recommend', 'happy', 'satisfied', 'exceeded', 'superb', 'outstanding'],\n  negative: ['terrible', 'horrible', 'worst', 'awful', 'hate', 'disappointed', 'disappointing', 'poor', 'bad', 'useless', 'waste', 'regret', 'never', 'avoid', \"don't buy\", 'garbage', 'junk', 'pathetic']\n};\n\nfunction detectSentiment(rating, text) {\n  const lowerText = text.toLowerCase();\n  let sentiment, baseScore;\n  \n  if (rating >= 4) {\n    sentiment = 'positive';\n    baseScore = rating === 5 ? 0.9 : 0.6;\n  } else if (rating <= 2) {\n    sentiment = 'negative';\n    baseScore = rating === 1 ? -0.9 : -0.6;\n  } else {\n    sentiment = 'neutral';\n    baseScore = 0.0;\n  }\n  \n  let modifier = 0;\n  const positiveMatches = SENTIMENT_MODIFIERS.positive.filter(kw => lowerText.includes(kw)).length;\n  const negativeMatches = SENTIMENT_MODIFIERS.negative.filter(kw => lowerText.includes(kw)).length;\n  modifier = (positiveMatches * 0.1) - (negativeMatches * 0.1);\n  \n  let sentimentScore = Math.max(-1.0, Math.min(1.0, baseScore + modifier));\n  \n  if (sentimentScore >= 0.3 && sentiment !== 'positive') sentiment = 'positive';\n  else if (sentimentScore <= -0.3 && sentiment !== 'negative') sentiment = 'negative';\n  else if (sentimentScore > -0.3 && sentimentScore < 0.3) sentiment = 'neutral';\n  \n  sentimentScore = Math.round(sentimentScore * 100) / 100;\n  \n  return { sentiment, sentiment_score: sentimentScore };\n}\n\nfunction detectTopics(text) {\n  const lowerText = text.toLowerCase();\n  const detectedTopics = new Set();\n  \n  for (const [topic, keywords] of Object.entries(TOPIC_KEYWORDS)) {\n    for (const keyword of keywords) {\n      if (lowerText.includes(keyword)) {\n        detectedTopics.add(topic);\n        break;\n      }\n    }\n  }\n  \n  return detectedTopics.size === 0 ? ['other'] : Array.from(detectedTopics).slice(0, 6);\n}\n\nfunction classifyUrgency(text, rating) {\n  const lowerText = text.toLowerCase();\n  \n  for (const keyword of URGENCY_KEYWORDS.high) {\n    if (lowerText.includes(keyword)) return 'high';\n  }\n  \n  for (const keyword of URGENCY_KEYWORDS.medium) {\n    if (lowerText.includes(keyword)) return 'med';\n  }\n  \n  if (rating === 1) return 'med';\n  return 'low';\n}\n\nfunction extractKeyPhrases(text) {\n  const phrases = [];\n  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);\n  \n  sentences.forEach(sentence => {\n    const words = sentence.trim().toLowerCase().split(/\\s+/);\n    for (let i = 0; i < words.length - 1; i++) {\n      const phrase = words.slice(i, Math.min(i + 3, words.length)).join(' ');\n      const containsImportantWord = [\n        ...Object.values(TOPIC_KEYWORDS).flat(),\n        ...SENTIMENT_MODIFIERS.positive,\n        ...SENTIMENT_MODIFIERS.negative\n      ].some(keyword => phrase.includes(keyword));\n      \n      if (containsImportantWord && phrase.length > 5 && phrase.length < 50) {\n        phrases.push(phrase);\n      }\n    }\n  });\n  \n  return [...new Set(phrases)].slice(0, 5);\n}\n\nfunction generateSummary(rating, topics, urgency, sentiment) {\n  const topicStr = topics.length > 0 ? topics.slice(0, 3).join(', ') : 'general';\n  let summary = `Rating ${rating}/5. `;\n  \n  if (sentiment === 'positive') summary += 'Positive feedback ';\n  else if (sentiment === 'negative') summary += 'Negative feedback ';\n  else summary += 'Mixed feedback ';\n  \n  summary += `regarding: ${topicStr}. `;\n  \n  if (urgency === 'high') summary += 'HIGH URGENCY - Safety concern.';\n  else if (urgency === 'med') summary += 'Medium urgency - Product issue reported.';\n  else summary += 'Low urgency.';\n  \n  return summary;\n}\n\nfunction enrichReview(review) {\n  const { rating = 3, review_text = '', review_title = '' } = review;\n  const fullText = `${review_title} ${review_text}`.trim();\n  \n  if (!fullText || fullText.length < 3) {\n    return {\n      sentiment: 'neutral',\n      sentiment_score: 0.0,\n      topics: ['other'],\n      urgency: 'low',\n      summary: 'Review text too short for analysis.',\n      key_phrases: [],\n      ai_model: 'rule-based-v1',\n      ai_raw_json: null\n    };\n  }\n  \n  const { sentiment, sentiment_score } = detectSentiment(rating, fullText);\n  const topics = detectTopics(fullText);\n  const urgency = classifyUrgency(fullText, rating);\n  const key_phrases = extractKeyPhrases(fullText);\n  const summary = generateSummary(rating, topics, urgency, sentiment);\n  \n  return {\n    sentiment,\n    sentiment_score,\n    topics,\n    urgency,\n    summary,\n    key_phrases,\n    ai_model: 'rule-based-v1',\n    ai_raw_json: null\n  };\n}\n\n// Main execution\nconst items = $input.all();\nconst enrichedItems = [];\n\nfor (const item of items) {\n  const review = item.json;\n  const enrichment = enrichReview(review);\n  \n  enrichedItems.push({\n    json: {\n      ...review,\n      ...enrichment\n    }\n  });\n}\n\nreturn enrichedItems;"
+      },
+      "id": "enrich-reviews",
+      "name": "Enrich with NLP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "product_reviews",
+        "columns": "source,product_id,product_name,review_id,reviewer_name,rating,review_title,review_text,review_date,country,language,sentiment,sentiment_score,topics,urgency,summary,key_phrases,ai_model,ai_raw_json",
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "id": "insert-to-postgres",
+      "name": "Insert to PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.1,
+      "position": [
+        1250,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL - reviewsdb"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Success summary\nconst items = $input.all();\nconst count = items.length;\n\nconst sentimentCounts = items.reduce((acc, item) => {\n  acc[item.json.sentiment] = (acc[item.json.sentiment] || 0) + 1;\n  return acc;\n}, {});\n\nconst highUrgencyCount = items.filter(item => item.json.urgency === 'high').length;\n\nreturn [{\n  json: {\n    success: true,\n    message: `Successfully processed ${count} reviews`,\n    sentiment_breakdown: sentimentCounts,\n    high_urgency_reviews: highUrgencyCount,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "success-summary",
+      "name": "Success Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read CSV File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read CSV File": {
+      "main": [
+        [
+          {
+            "node": "Spreadsheet File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Spreadsheet File": {
+      "main": [
+        [
+          {
+            "node": "Normalize Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Fields": {
+      "main": [
+        [
+          {
+            "node": "Enrich with NLP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich with NLP": {
+      "main": [
+        [
+          {
+            "node": "Insert to PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert to PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Success Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-02-22T00:00:00.000Z",
+  "versionId": "1"
+}
