@@ -20,4 +20,4 @@ Industry-neutral automation project that ingests product reviews, enriches them 
 ## Quick Start
 1) Copy env:
 ```bash
-cp .env.example .env
+cp .env.example .env# ai-product-review-analyzer
