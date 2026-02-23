@@ -175,13 +175,6 @@ None - initial release
 
 ---
 
-## Contributors
-
-### v1.0.0
-- **Pavan Kalyan Reddy Madatala** - Initial creation and documentation
-
----
-
 ## Statistics
 
 ### v1.0.0 Metrics

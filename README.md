@@ -6,22 +6,22 @@
 [![Database](https://img.shields.io/badge/PostgreSQL-16-336791)]()
 [![Containerized](https://img.shields.io/badge/Docker-Compose-2496ED)]()
 
-## 📌 Project Overview
+## Project Overview
 
 An automated product review analytics system that ingests raw reviews from CSV files, processes them through a custom enrichment engine, and stores structured insights in PostgreSQL. The architecture supports both **rule-based** and **LLM-based** enrichment modes, making it flexible for different deployment scenarios.
 
 **Key Features:**
-- ✅ Automated CSV ingestion and parsing
-- ✅ Dual enrichment modes: Rule-based (no API costs) or LLM-powered (OpenAI/Claude)
-- ✅ Sentiment analysis, topic detection, urgency classification
-- ✅ Idempotent pipeline with duplicate prevention
-- ✅ Production-ready PostgreSQL schema with proper indexing
-- ✅ Fully containerized with Docker Compose
-- ✅ Weekly insights digest generation
+-  Automated CSV ingestion and parsing
+-  Dual enrichment modes: Rule-based (no API costs) or LLM-powered (OpenAI/Claude)
+-  Sentiment analysis, topic detection, urgency classification
+-  Idempotent pipeline with duplicate prevention
+-  Production-ready PostgreSQL schema with proper indexing
+-  Fully containerized with Docker Compose
+-  Weekly insights digest generation
 
 ---
 
-## 🧠 Problem Statement
+## Problem Statement
 
 Companies receive thousands of product reviews across platforms. Manually analyzing sentiment trends, common issues, urgent defects, and feature requests is inefficient and error-prone.
 
@@ -34,7 +34,7 @@ Companies receive thousands of product reviews across platforms. Manually analyz
 
 ---
 
-## 🏗 Architecture Overview
+## Architecture Overview
 
 ### Workflow A – Ingestion & Enrichment
 
@@ -59,7 +59,7 @@ PostgreSQL → Aggregate Metrics → LLM Analysis → Markdown Report
 
 ---
 
-## 🧩 Tech Stack
+## Tech Stack
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
@@ -71,7 +71,7 @@ PostgreSQL → Aggregate Metrics → LLM Analysis → Markdown Report
 
 ---
 
-## 🗄 Database Schema
+## Database Schema
 
 **Table:** `product_reviews`
 
@@ -117,7 +117,7 @@ CREATE INDEX ix_product_reviews_topics_gin ON product_reviews USING GIN (topics)
 
 ---
 
-## 🧠 Enrichment Engines
+## Enrichment Engines
 
 ### Option 1: Rule-Based NLP Engine (Default)
 
@@ -209,7 +209,7 @@ volumes:
 
 ---
 
-## 📊 Example Output
+##  Example Output
 
 ### Input Review (CSV)
 ```csv
@@ -250,47 +250,7 @@ UNIQUE INDEX (source, review_id)
 
 ---
 
-## 🚀 Future Improvements
-
-### Phase 1 - Core Enhancements
-- [ ] Add Amazon/Shopify scraper integration
-- [ ] REST API ingestion endpoint
-- [ ] Incremental CSV processing (track last processed row)
-- [ ] Multi-language support (auto-detect and translate)
-
-### Phase 2 - Advanced Analytics
-- [ ] Weekly aggregation workflow (already prompts prepared)
-- [ ] Trend analysis per product over time
-- [ ] Anomaly detection (sudden spike in negative reviews)
-- [ ] Sentiment shift alerts
-
-### Phase 3 - Integrations
-- [ ] Slack/Email alerting for high urgency reviews
-- [ ] Superset/Metabase dashboard
-- [ ] Export to Google Sheets
-- [ ] Zapier/Make.com webhooks
-
-### Phase 4 - ML/AI Upgrades
-- [ ] Fine-tuned classification model
-- [ ] Named entity recognition (product features)
-- [ ] Review clustering (group similar complaints)
-- [ ] Aspect-based sentiment analysis
-
----
-
-## 🎯 Engineering Highlights
-
-✅ **Production-ready database schema** with proper normalization and indexing  
-✅ **Conflict-safe inserts** using PostgreSQL unique constraints  
-✅ **Deterministic enrichment** via rule-based engine (no API dependency)  
-✅ **Modular architecture** - easily swap rule-based ↔ LLM enrichment  
-✅ **Idempotent pipeline** - safe to reprocess same data  
-✅ **Containerized setup** - consistent across environments  
-✅ **Clear separation** of ingestion, enrichment, and storage layers
-
----
-
-## 📚 Documentation
+##  Documentation
 
 - [Architecture Details](docs/ARCHITECTURE.md)
 - [Rule-Based NLP Engine](docs/NLP_ENGINE.md)
@@ -298,25 +258,3 @@ UNIQUE INDEX (source, review_id)
 - [Database Schema Reference](docs/DATABASE.md)
 
 ---
-
-## 🧠 Resume-Friendly Summary
-
-> Built an automated product review analytics pipeline using n8n and PostgreSQL to classify sentiment, detect topics, and identify urgent product issues using a custom rule-based NLP engine. Designed idempotent ingestion flow with conflict-safe database inserts and modular architecture enabling future LLM integration.
-
----
-
-## 📝 License
-
-MIT
-
----
-
-## 👤 Author
-
-Built by **Pavan Kalyan Reddy Madatala**
-
----
-
-## 🤝 Contributing
-
-Contributions welcome! Please open an issue or submit a pull request.
