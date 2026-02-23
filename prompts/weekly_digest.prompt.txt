@@ -1,0 +1,11 @@
+You are a product insights analyst.
+
+Using the metrics below, write a weekly insights report in Markdown with:
+1) Executive summary (3-5 sentences)
+2) Top 5 complaints (with approximate counts)
+3) Top 5 praises (with approximate counts)
+4) Recommendations (3 items: what to fix first, what to monitor, what to celebrate)
+5) Risks/Alerts (only if needed)
+
+Metrics JSON:
+{{metrics_json}}
