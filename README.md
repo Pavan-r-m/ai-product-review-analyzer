@@ -1,8 +1,9 @@
 # 📦 AI Product Review Analyzer
 
-> End-to-end automated product review analytics pipeline built with n8n, PostgreSQL, and modular NLP enrichment
+> End-to-end automated product review analytics pipeline built with n8n, Google Gemini, PostgreSQL, and modular NLP enrichment
 
 [![Tech Stack](https://img.shields.io/badge/n8n-Workflow-EA4B71)]()
+[![LLM](https://img.shields.io/badge/Google-Gemini-4285F4)]()
 [![Database](https://img.shields.io/badge/PostgreSQL-16-336791)]()
 [![Containerized](https://img.shields.io/badge/Docker-Compose-2496ED)]()
 
@@ -12,11 +13,11 @@ An automated product review analytics system that ingests raw reviews from CSV f
 
 **Key Features:**
 -  Automated CSV ingestion and parsing
--  Dual enrichment modes: Rule-based (no API costs) or LLM-powered (OpenAI/Claude)
+-  Dual enrichment modes: Rule-based (no API costs) or **Gemini-powered** (Google AI)
 -  Sentiment analysis, topic detection, urgency classification
 -  Idempotent pipeline with duplicate prevention
 -  Production-ready PostgreSQL schema with proper indexing
--  Fully containerized with Docker Compose
+-  Fully containerized with Docker   Compose
 -  Weekly insights digest generation
 
 ---
@@ -36,25 +37,31 @@ Companies receive thousands of product reviews across platforms. Manually analyz
 
 ## Architecture Overview
 
-### Workflow A – Ingestion & Enrichment
+### Workflow – Ingestion & Enrichment (Gemini)
 
 ```
-CSV File → Read & Parse → Normalize → NLP Engine → PostgreSQL
-                                      (Rule-based or LLM)
+Manual Trigger
+    → Read/Write Files from Disk
+    → Extract from File (CSV → 15 items)
+    → Data Normalization (batch into groups of 3 → 5 batches)
+    → Gemini API Call (POST generativelanguage.googleapis.com)
+    → LLM Classification (parse Response Text)
+    → Persist to Postgres (insert, skip on conflict)
 ```
 
 **Pipeline Steps:**
-1. **Trigger** - Manual or scheduled activation
-2. **Read CSV** - Load review file from disk
-3. **Extract & Normalize** - Structure review fields
-4. **Apply Enrichment Engine** - Sentiment, topics, urgency, summary
-5. **Insert to PostgreSQL** - Store with conflict handling
-6. **Skip Duplicates** - Using unique constraint on (source, review_id)
+1. **Manual Trigger** - Execute workflow button in n8n
+2. **Read/Write Files from Disk** - Load CSV file from mounted volume
+3. **Extract from File** - Parse CSV into 15 structured row items
+4. **Data Normalization** - Normalize fields, batch into groups of 3 (5 batches)
+5. **Gemini API Call** - POST each batch to `gemini-1.5-flash` with classification prompt
+6. **LLM Classification** - Parse Gemini's JSON response, flatten to individual records
+7. **Persist to Postgres** - Insert enriched records, skip duplicates on conflict
 
 ### Workflow B – Weekly Digest (Optional)
 
 ```
-PostgreSQL → Aggregate Metrics → LLM Analysis → Markdown Report
+PostgreSQL → Aggregate Metrics → Gemini Analysis → Markdown Report
 ```
 
 ---
@@ -65,7 +72,8 @@ PostgreSQL → Aggregate Metrics → LLM Analysis → Markdown Report
 |-----------|-----------|---------|
 | **Orchestration** | n8n | Workflow automation |
 | **Database** | PostgreSQL 16 | Structured data storage |
-| **NLP Engine** | JavaScript (rule-based) or OpenAI | Review enrichment |
+| **LLM** | Google Gemini 1.5 Flash | Review enrichment via API |
+| **Fallback NLP** | JavaScript (rule-based) | Zero-cost enrichment |
 | **Containerization** | Docker Compose | Environment management |
 | **Data Format** | CSV, JSON | Input/output |
 
@@ -152,11 +160,17 @@ Template: `"Rating {rating}/5. Topics: {topics}. Urgency: {urgency}."`
 
 **See:** [lib/nlp-engine.js](lib/nlp-engine.js) for implementation
 
-### Option 2: LLM-Based Enrichment (OpenAI/Claude)
+### Option 2: Gemini API Enrichment (Default Workflow)
 
-Uses prompt engineering for sophisticated analysis. Requires API key.
+Uses **Google Gemini 1.5 Flash** for batch classification. This is the primary enrichment mode shown in the n8n workflow.
 
-**See:** [prompts/classify_review.prompt.txt](prompts/classify_review.prompt.txt)
+**Model:** `gemini-1.5-flash`  
+**Batch Size:** 3 reviews per API call  
+**API:** `POST https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`
+
+**Requires:** `GOOGLE_API_KEY` environment variable  
+**Get your key:** https://aistudio.google.com/app/apikey  
+**See:** [prompts/classify_review.prompt.txt](prompts/classify_review.prompt.txt) and [workflows/csv-ingestion-gemini.json](workflows/csv-ingestion-gemini.json)
 
 ---
 
@@ -183,7 +197,8 @@ cd ai-product-review-analyzer
 
 # 2. Create environment file
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY if using LLM mode
+# Edit .env and add your GOOGLE_API_KEY
+# Get it free at: https://aistudio.google.com/app/apikey
 
 # 3. Start containers
 docker compose up -d

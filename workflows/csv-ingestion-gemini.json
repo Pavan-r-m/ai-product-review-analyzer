@@ -1,0 +1,170 @@
+{
+  "name": "Review Ingestion & Enrichment (Gemini)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "When clicking 'Execute workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [80, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "/home/node/.n8n-files/data/reviews_sample.csv",
+        "options": {}
+      },
+      "id": "read-file",
+      "name": "Read/Write Files from Disk",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [280, 300]
+    },
+    {
+      "parameters": {
+        "operation": "csv",
+        "options": {
+          "headerRow": true,
+          "delimiter": ","
+        }
+      },
+      "id": "extract-from-file",
+      "name": "Extract from File",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Data Normalization\n// Normalize fields and batch into groups of 3 for Gemini API calls\n\nconst items = $input.all();\nconst batches = [];\nconst BATCH_SIZE = 3;\n\n// Normalize each item first\nconst normalizedItems = items.map((item, index) => {\n  const json = item.json;\n  const reviewId = json.review_id ||\n    `csv_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 6)}`;\n\n  return {\n    source: 'csv',\n    product_id: json.product_id || null,\n    product_name: (json.product_name || 'Unknown').trim(),\n    review_id: reviewId,\n    reviewer_name: json.reviewer_name || null,\n    rating: parseFloat(json.rating) || 3,\n    review_title: (json.review_title || '').trim(),\n    review_text: (json.review_text || '').trim(),\n    review_date: json.review_date || new Date().toISOString().split('T')[0],\n    country: json.country || 'Unknown',\n    language: json.language || 'en'\n  };\n});\n\n// Batch into groups for Gemini API calls\nfor (let i = 0; i < normalizedItems.length; i += BATCH_SIZE) {\n  const batch = normalizedItems.slice(i, i + BATCH_SIZE);\n  batches.push({\n    json: {\n      batch_index: Math.floor(i / BATCH_SIZE),\n      reviews: batch,\n      prompt: `You are an analytics classifier for product reviews.\\n\\nFor each review below, return a JSON array where each element matches:\\n{\\n  \"review_id\": string,\\n  \"sentiment\": \"positive\" | \"neutral\" | \"negative\",\\n  \"sentiment_score\": number between -1.0 and 1.0,\\n  \"topics\": string[] (1-6 lowercase topics),\\n  \"urgency\": \"low\" | \"med\" | \"high\",\\n  \"summary\": string,\\n  \"key_phrases\": string[]\\n}\\n\\nTopics can include: battery, pricing, delivery, support, ui, performance, durability, setup, compatibility, sound, screen, design, other.\\nIf safety hazard or severe defect, urgency must be \"high\".\\n\\nReviews:\\n${JSON.stringify(batch, null, 2)}\\n\\nReturn ONLY a valid JSON array. No explanation.`\n    }\n  });\n}\n\nreturn batches;"
+      },
+      "id": "data-normalization",
+      "name": "Data Normalization",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={{ $env.GOOGLE_API_KEY }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": {{ JSON.stringify($json.prompt) }}\n        }\n      ]\n    }\n  ],\n  \"generationConfig\": {\n    \"temperature\": 0.1,\n    \"responseMimeType\": \"application/json\"\n  }\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "gemini-api-call",
+      "name": "Gemini API Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// LLM Classification\n// Parse Gemini response and merge with original batch data\n\nconst items = $input.all();\nconst output = [];\n\nfor (const item of items) {\n  const geminiResponse = item.json;\n\n  // Extract text from Gemini response structure\n  let responseText = '';\n  try {\n    responseText = geminiResponse.candidates[0].content.parts[0].text;\n  } catch (e) {\n    console.error('Failed to extract Gemini response text:', e.message);\n    continue;\n  }\n\n  // Parse the JSON array returned by Gemini\n  let classifications = [];\n  try {\n    // Remove markdown code blocks if present\n    const cleaned = responseText\n      .replace(/```json\\n?/g, '')\n      .replace(/```\\n?/g, '')\n      .trim();\n    classifications = JSON.parse(cleaned);\n  } catch (e) {\n    console.error('Failed to parse Gemini JSON:', e.message);\n    continue;\n  }\n\n  // Find matching original review data from the Data Normalization node\n  // We retrieve it from the paired input item's reviews array\n  const originalReviews = item.json._inputData?.reviews || [];\n\n  // Emit one output item per classified review\n  for (const cls of classifications) {\n    // Find the original review by review_id\n    const original = originalReviews.find(r => r.review_id === cls.review_id) || {};\n\n    output.push({\n      json: {\n        source: original.source || 'csv',\n        product_id: original.product_id || null,\n        product_name: original.product_name || null,\n        review_id: cls.review_id || original.review_id,\n        reviewer_name: original.reviewer_name || null,\n        rating: original.rating || null,\n        review_title: original.review_title || null,\n        review_text: original.review_text || null,\n        review_date: original.review_date || null,\n        country: original.country || null,\n        language: original.language || 'en',\n        sentiment: cls.sentiment,\n        sentiment_score: cls.sentiment_score,\n        topics: cls.topics,\n        urgency: cls.urgency,\n        summary: cls.summary,\n        key_phrases: cls.key_phrases,\n        ai_model: 'gemini-1.5-flash',\n        ai_raw_json: geminiResponse\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "id": "llm-classification",
+      "name": "LLM Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "product_reviews",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "source": "={{ $json.source }}",
+            "product_id": "={{ $json.product_id }}",
+            "product_name": "={{ $json.product_name }}",
+            "review_id": "={{ $json.review_id }}",
+            "reviewer_name": "={{ $json.reviewer_name }}",
+            "rating": "={{ $json.rating }}",
+            "review_title": "={{ $json.review_title }}",
+            "review_text": "={{ $json.review_text }}",
+            "review_date": "={{ $json.review_date }}",
+            "country": "={{ $json.country }}",
+            "language": "={{ $json.language }}",
+            "sentiment": "={{ $json.sentiment }}",
+            "sentiment_score": "={{ $json.sentiment_score }}",
+            "topics": "={{ $json.topics }}",
+            "urgency": "={{ $json.urgency }}",
+            "summary": "={{ $json.summary }}",
+            "key_phrases": "={{ $json.key_phrases }}",
+            "ai_model": "={{ $json.ai_model }}",
+            "ai_raw_json": "={{ JSON.stringify($json.ai_raw_json) }}"
+          }
+        },
+        "options": {
+          "skipOnConflict": true
+        }
+      },
+      "id": "persist-to-postgres",
+      "name": "Persist to Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1280, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL - reviewsdb"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [[{ "node": "Read/Write Files from Disk", "type": "main", "index": 0 }]]
+    },
+    "Read/Write Files from Disk": {
+      "main": [[{ "node": "Extract from File", "type": "main", "index": 0 }]]
+    },
+    "Extract from File": {
+      "main": [[{ "node": "Data Normalization", "type": "main", "index": 0 }]]
+    },
+    "Data Normalization": {
+      "main": [[{ "node": "Gemini API Call", "type": "main", "index": 0 }]]
+    },
+    "Gemini API Call": {
+      "main": [[{ "node": "LLM Classification", "type": "main", "index": 0 }]]
+    },
+    "LLM Classification": {
+      "main": [[{ "node": "Persist to Postgres", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-02-24T00:00:00.000Z",
+  "versionId": "2"
+}

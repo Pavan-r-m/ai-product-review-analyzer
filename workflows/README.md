@@ -4,20 +4,22 @@ This directory contains pre-built n8n workflow templates for the AI Product Revi
 
 ## Available Workflows
 
-### 1. CSV Ingestion (Rule-Based)
-**File:** `csv-ingestion-rule-based.json`
+### 1. CSV Ingestion (Gemini AI) ⭐ Primary
+**File:** `csv-ingestion-gemini.json`
 
-**Purpose:** Ingest reviews from CSV file and enrich using rule-based NLP engine
+**Purpose:** Ingest reviews from CSV and enrich using Google Gemini 1.5 Flash — matches the live n8n workflow
 
 **Flow:**
 ```
-Manual Trigger → Read CSV → Parse → Normalize → Enrich (Rule-Based) → PostgreSQL
+Manual Trigger → Read/Write Files from Disk → Extract from File (CSV)
+  → Data Normalization (batch 3 reviews/call) → Gemini API Call
+  → LLM Classification (parse response) → Persist to Postgres
 ```
 
-**Configuration:**
-1. Update CSV file path in "Read CSV File" node
-2. Configure PostgreSQL credentials
-3. Run workflow manually
+**Prerequisites:**
+1. Set `GOOGLE_API_KEY` in your `.env` file
+2. Get key free at: https://aistudio.google.com/app/apikey
+3. Configure PostgreSQL credentials in n8n
 
 **Input CSV Format:**
 ```csv
@@ -25,10 +27,19 @@ product_name,rating,review_title,review_text,review_date,country
 Noise Cancelling Headphones,2,"Battery issue","Battery drains in 2 hours.",2026-02-15,US
 ```
 
-**Expected Output:**
-- Reviews inserted into `product_reviews` table
-- Duplicates automatically skipped
-- Summary with sentiment breakdown
+**Batching logic:** 15 CSV rows → batched into 5 groups of 3 → 5 Gemini API calls → 15 enriched records persisted
+
+---
+
+### 2. CSV Ingestion (Rule-Based) — No API Key Required
+**File:** `csv-ingestion-rule-based.json`
+
+**Purpose:** Ingest reviews from CSV file and enrich using rule-based NLP engine (zero cost, no API needed)
+
+**Flow:**
+```
+Manual Trigger → Read CSV → Parse → Normalize → Enrich (Rule-Based) → PostgreSQL
+```
 
 ---
 

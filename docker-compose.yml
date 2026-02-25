@@ -26,7 +26,7 @@ services:
       - NODE_ENV=production
       - DB_TYPE=sqlite
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
     volumes:
       - pr_n8n_data:/home/node/.n8n
